@@ -1,167 +1,267 @@
-# Transformer
+![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-This implementation of the Transformer model architecture is based on the optimized implementation in [Facebook's Fairseq NLP toolkit](https://github.com/pytorch/fairseq), built on top of PyTorch. The original version in the Fairseq project was developed using Tensor Cores, which provides significant training speedup. Our implementation improves the performance of a training and is tested on a DGX-1V 16GB.
+# CUTLASS 1.3
 
-# Requirements and installation
-This repository contains a `Dockerfile` which extends the PyTorch NGC container and encapsulates all dependencies. Ensure you have the following software:
-* [nvidia-docker](https://github.com/NVIDIA/nvidia-docker)
-* [PyTorch 19.01-py3 NGC container](https://ngc.nvidia.com/registry/nvidia-pytorch) or newer
-* [SacreBLEU 1.2.10](https://pypi.org/project/sacrebleu/1.2.10/)
+_CUTLASS 1.3.1 - April 2019_
 
-If you use multiprocessing for multi-threaded data loaders, the default shared memory segment size that the container runs with may not be enough. Therefore, we recommend you to increase the shared memory size by issuing either: 
+CUTLASS is a collection of CUDA C++ template abstractions for implementing
+high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
+It incorporates strategies for hierarchical decomposition and data movement similar
+to those used to implement cuBLAS.  CUTLASS decomposes these "moving parts" into
+reusable, modular software components abstracted by C++ template classes.  These
+thread-wide, warp-wide, block-wide, and device-wide primitives can be specialized
+and tuned via custom tiling sizes, data types, and other algorithmic policy. The
+resulting flexibility simplifies their use as building blocks within custom kernels
+and applications.
+
+To support a wide variety of applications, CUTLASS provides extensive support for
+mixed-precision computations, providing specialized data-movement and
+multiply-accumulate abstractions for 8-bit integer, half-precision floating
+point (FP16), single-precision floating point (FP32), and double-precision floating
+point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targeting
+the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture
+and beyond. Even faster performance on Volta is possible via direct access to
+Volta Tenor Cores via `mma.sync` (added in CUDA 10.1).
+
+CUTLASS 1.3 is described in the [CUTLASS Documentation](CUTLASS.md) and the accompanying
+[Doxygen documentation](https://nvidia.github.io/cutlass).
+We describe the structure of an efficient GEMM in our talk at the
+[GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
+
+# What's New in CUTLASS 1.3.1
+_April 2019_
+* CUTLASS 1.3.1 corrected NVRTC unit tests..
+
+# What's New in CUTLASS 1.3
+_March 2019_
+* CUTLASS 1.3 includes an efficient GEMM implementation with the `mma.sync` instruction added in CUDA 10.1.
+
+# What's New in CUTLASS 1.2
+_October 2018_
+* [Parallelized Reductions](CUTLASS.md#parallel-reductions-across-gemm-k)
+* Batched strided WMMA GEMM
+
+
+# What's New in CUTLASS 1.1
+_September 2018_
+
+* [CUTLASS Documentation](CUTLASS.md)
+* [Examples](examples/)
+  * Basic GEMM, tensor views, CUTLASS utilities, batched GEMM, WMMA GEMM
+* Turing Features
+  * [WMMA GEMM targeting TensorCores](tools/test/unit/gemm/wmma_integer_gemm.cu) - INT8, INT4, 1-bit
+* [Batched Strided GEMM](tools/test/unit/gemm/batched_strided_sgemm_128x128x8.cu)
+* [Threadblock rasterization strategies](tools/test/unit/gemm/sgemm_threadblock_swizzle_nt.cu)
+  * Improved performance for adverse problem sizes and data layouts
+* Extended CUTLASS Core components
+  * Tensor views support arbitrary matrix and tensor layouts
+  * Zip iterators for structuring multiple data streams
+* Enhanced CUTLASS utilities
+  * [Reference implementations](tools/util/reference) for tensor operations in [host](tools/util/reference/host) and [device](tools/util/reference/device) code
+  * Added `HostMatrix<>` for simplified matrix creation
+
+# Performance
+
+<p align="center"><img src=/media/images/cutlass-performance-plot.png></p>
+
+CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
+they exhibit performance comparable to cuBLAS for scalar GEMM
+computations. The above figure shows CUTLASS performance relative to cuBLAS
+for large matrix dimensions (M=10240, N=K=4096) running on an NVIDIA Titan V GPU
+when compiled with CUDA 10.0.
+
+# Compatibility
+
+CUTLASS performs best when compiled with the [CUDA 10.1 Toolkit](ttps://developer.nvidia.com/cuda-toolkit).
+It is also compatible with CUDA 9.0, 9.1, 9.2, and 10.0.
+
+We have tested the following environments.
+
+|**Operating System** | **Compiler** |
+|-----------------|----------|
+| Windows 10      | Microsoft Visual Studio 2015|
+|                 | Microsoft Visual Studio 2017|
+| Ubuntu 14.04 | GCC 4.8.2 |
+| Ubuntu 16.04 | GCC 5.4.0 |
+| Ubuntu 18.04 | GCC 7.3.0 |
+
+CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be efficient on
+any Maxwell-, Pascal-, Volta-, and Turing-architecture NVIDIA GPUs.
+
+|**GPU**|
+|---|
+|NVIDIA GeForce 1080|
+|NVIDIA TitanXP|
+|NVIDIA Tesla P100|
+|NVIDIA Tesla V100|
+|NVIDIA TitanV|
+|NVIDIA GeForce RTX 2080 TI, 2080, 2070|
+
+# Building CUTLASS
+
+CUTLASS is a header-only template library and does not need to be built to be used by other
+projects. However, we distribute extensive unit tests and utility programs to demonstrate
+CUTLASS. These instructions are for building those test programs.
+
+CUTLASS's unit tests depend on Google Test which exists as a git submodule. You can fetch
+submodules as follows.
+
 ```
---ipc=host
+$ git submodule update --init --recursive
 ```
-Or
-```
---shm-size=<requested memory size>
-```
-in the command line to `nvidia-docker run`. For more information,see [Setting The Shared Memory Flag](https://docs.nvidia.com/deeplearning/dgx/user-guide/index.html#setincshmem) in the NVIDIA Container User Guide.
 
-For more information about how to get started with NGC containers, see the
-following sections from the NVIDIA GPU Cloud Documentation and the Deep Learning
-DGX Documentation:
- - [Getting Started Using NVIDIA GPU Cloud](https://docs.nvidia.com/ngc/ngc-getting-started-guide/index.html)
- - [Accessing And Pulling From The NGC Container Registry](https://docs.nvidia.com/deeplearning/dgx/user-guide/index.html#accessing_registry)
- - [Running PyTorch](https://docs.nvidia.com/deeplearning/dgx/pytorch-release-notes/running.html#running)
+CUTLASS can be build with CMake starting version 3.10. By default CUTLASS will build kernels
+for CUDA architecture versions 5.0, 6.0, 6.1, 7.0 and 7.5. To reduce compile time you can specify
+the architectures to build CUTLASS for by changing the CMake configuration setting
+`CUTLASS_NVCC_ARCHS`.
 
-## Training using mixed precision with Tensor Cores
-The training script provided in this project takes advantage of Tensor Cores to speedup the time it takes to train the Transformer model (for a translation task in this example). Tensor Cores accelerate matrix multiplication math and are available on NVIDIA Volta and Turing based GPUs. For more information about how to use Tensor Cores, see the [Training With Mixed Precision Guide](https://docs.nvidia.com/deeplearning/sdk/mixed-precision-training/index.html) to Mixed Precision Training on NVIDIA GPUs.
-
-An additional resource for mixed precision training is NVIDIA’s
-[Apex](https://github.com/NVIDIA/apex), a PyTorch extension, that contains
-utility libraries, such as AMP, which stands for Automatic Mixed Precision and enables the use of Tensor Cores with minimal code changes to existing PyTorch training scripts.
-
-
-# Hyper parameters setting
-To reach the BLEU score reported in [Scaling Neural Machine Translation](https://arxiv.org/abs/1806.00187) reaserch paper, we used mixed precision training with a batch size of 5120 per GPU and learning rate of 6e-4 on a DGX-1V system with 8 Tesla V100s 16G. If you use a different setup, we recommend you scale your hyperparameters by applying the following rules:
-1. To use FP32, reduce the batch size to 2560 and set the `--update-freq 2` and `--warmup-updates 8000` options.
-2. To train on a fewer GPUs, multiply `--update-freq` and `--warmup-updates` by the reciprocal of scaling factor.
-
-For example, when training in FP32 mode on 4 GPUs, use the `--update-freq=4` and `--warmup-updates 16000` options.
-
-# Quick start guide
-Perform the following steps to train using provided default parameters of the Transformer model on the [WMT14 English-German](http://statmt.org/wmt14/translation-task.html#Download) dataset.
-## Build and launch Transformer Docker container
-```bash
-docker build . -t your.repository:transformer
-nvidia-docker run -it --rm --ipc=host -v /path/to/your/dataset:/container/dataset/path your.repository:transformer bash
-```
-## Downloading and preprocessing dataset
-Download and preprocess the WMT14 English-German dataset.
-```bash
-./run_preprocessing.sh
-```
-## Run training
-The following command runs the training script that is distributed between 8 workers.
-```bash
-python -m torch.distributed.launch --nproc_per_node 8 /workspace/translation/train.py /workspace/data-bin/wmt14_en_de_joined_dict \
-  --arch transformer_wmt_en_de_big_t2t \
-  --share-all-embeddings \
-  --optimizer adam \
-  --adam-betas '(0.9, 0.997)' \
-  --adam-eps "1e-9" \
-  --clip-norm 0.0 \
-  --lr-scheduler inverse_sqrt \
-  --warmup-init-lr 0.0 \
-  --warmup-updates 4000 \
-  --lr 0.0006 \
-  --min-lr 0.0 \
-  --dropout 0.1 \
-  --weight-decay 0.0 \
-  --criterion label_smoothed_cross_entropy \
-  --label-smoothing 0.1 \
-  --max-tokens 5120 \
-  --seed 1 \
-  --target-bleu 28.3 \
-  --ignore-case \
-  --fp16 \
-  --save-dir /workspace/checkpoints \
-  --distributed-init-method env:// 
+Create a build directory within the CUTLASS project, then run CMake once.
 
 ```
-**WARNING**: If you don't have access to sufficient disk space, use the --save-interval $N option. The checkpoints are ~2.5GB large. For example it takes the Transformer model 16 epochs to reach the BLEU score of 28 points. Default option is to save the latest checkpoint, the best checkpoint and a checkpoint for every epoch, which means (16+1+1)*2.5GB = 45GB of a disk space used. Specifying `--save-interval 5` you can reduce this to (16/5+1+1)*2.5GB = 12.5GB. 
-
-# Details
-
-## Getting the data
-The Transformer model was trained on the [WMT14 English-German](http://statmt.org/wmt14/translation-task.html#Download) dataset. Concatenation of the *commoncrawl*, *europarl* and *news-commentary* is used as train and vaidation dataset and *newstest2014* is used as test dataset.<br/>
-This repository contains `run_preprocessing.sh` script which will automatically download and preprocess the training and test datasets. By default data will be stored in `/data/wmt14_en_de_joined_dict` directory.<br/>
-Our download script utilizes [Moses decoder](https://github.com/moses-smt/mosesdecoder) to perform tokenization of the dataset and [subword-nmt](https://github.com/rsennrich/subword-nmt) to segment text into subword units (BPE). By default, script builds shared vocabulary of 33708 tokens, which is constistent withbuilds shared vocabulary of 33708 tokens, which is constistent with [Scaling Neural Machine Translation](https://arxiv.org/abs/1806.00187).
-
-## Running training
-The default training configuration can be launched ny running the `train.py` training script. By default, the script saves one checkpoint evety epoch in addition to the latest and the best ones. The best chckpoint is considered the one with the lowest value of loss, not the one with the highest BLEU score. To override this behavior use the `--save-interval $N` option to save epoch checkpoints every N epoch or `--no-epoch-checkpoints` to disable them entirely (with this option latest and the best checkpoints still will be saved). Specify save directory with `--save-dir` option.<br/>
-In order to run multi-GPU training launch the training script with `python -m torch.distributed.launch --nproc_per_node $N` prepended, where N is the number of GPUs.
-We have tested reliance on up to 16 GPUs on a single node.<br/>
-After each training epoch, the script runs a loss validation on the validation split of the dataset and outputs validation loss. By default the evaluation after each epoch is disabled. To enable it use `--online-eval` option or to use BLEU score value as training stopping condition use `--target-bleu $TGT` option. In order to compute case insensitive BLEU score use flag `--ignore-case` along with previous ones. BLEU is computed by the internal fairseq algorithm which implementation can be found in `fairseq/bleu.py` script.<br/>
-By default, the `train.py` script will launch fp32 training without Tensor Cores. To use mixed precision with Tensor Cores use `--fp16` option.<br/>
-To view all available options for training, run `python train.py --help`.
-
-## Running inference
-Inference on a raw input can be performed by launching `interactive.py` inference script. It requires pre-trained model checkpoint,BPE codes file and dictionary file (both are produced by `run_preprocessing.sh` script and can be found in the dataset directory).<br/>
-To enhance speed of the inference on large input files it is recommended to preprocess them the same way as the dataset and run inference on a binarized input with the `generate.py` script.<br/>
-Both scripts run inference with a default beam size of 4 and give tokenized output. To remove BPE codes use `--remove-bpe` option.<br/>
-To view all available options for training, run `python interactive.py --help`.
-
-## Testing
-Computing BLEU score is contained inside the training script and can be used to determine when the script should stop the training. To disable this feature replace `--target-bleu $BLEU$` and `--ignore-case` options with `--max-epoch $N`, where `N` is number of training epochs. By default, evaluation of the Transformer model is then performed on the binarized test split of the dataset by default. To evaluate the model, issue:
-```bash
-python generate.py /path/to/dataset/wmt14_en_de_joined_dict  \
-  --path /path/to/your/checkpoint.pt \
-  --beam 4 --remove-bpe
+$ mkdir build && cd build
+$ cmake ..
 ```
-In order to use [SacreBLEU](https://pypi.org/project/sacrebleu/1.2.10/) for evaluation, run:
-```bash
-sacrebleu -t wmt14/full -l en-de --echo src > wmt14-en-de.src
-python interactive.py --buffer-size 1 --fp16 --path /path/to/your/checkpoint.pt --max-tokens 128 \
-        --fuse-dropout-add --remove-bpe --bpe-codes /path/to/code/file \
-        /path/to/dataset/wmt14_en_de_joined_dict/ < wmt14-en-de.src > wmt14.detok
-grep ^H wmt14.detok | cut -f3- > wmt14.translated
-cat wmt14.translated | sacrebleu -t wmt14 -lc -l en-de
+
+Compile the CUTLASS project by running Make. Include the -j argument to compile sources in
+parallel and speed up the build process.
+
 ```
-Sacrebleu test set is a subset of test set used during a course of training thus score obtained with sacreBLEU can slightly differ from the one computed during training.
+$ make -j12
+...
+$
+```
 
-## Training Accuracy Results
-In order to test accuracy of our implementation we have run experiments with different seeds for 100 epochs with batch size 5120 per GPU and learining rate 6e-4 in the pytorch-19.03-py3 Docker container. Plot below shows BLEU score changes.<br/>
-![Accuracy plot](BLEU.png)
+Verify CUTLASS has been built correctly by running the unit tests from the build/ directory.
 
-## Training Performance Results
+```
+$ ./tools/test/unit/cutlass_unit_test
+...
+...
+...
+[----------] Global test environment tear-down
+[==========] 946 tests from 57 test cases ran. (10812 ms total)
+[  PASSED  ] 946 tests.
+```
 
-Running this code with the provided hyperparameters will allow you to achieve the following results. Our setup is a DGX-1 with 8x Tesla V100 16GB. We've verified our results after training 32 epochs to obtain multi-GPU and mixed precision scaling results.
+All tests should pass, though the exact number of tests may vary over time.
 
- GPU count | Mixed precision BLEU | fp32 BLEU | Mixed precision training time | fp32 training time
----|---|---|---|---
- 8 | 28.69 | 28.43 | 446 min | 1896 min
- 4 | 28.35 | 28.31 | 834 min | 3733 min
+# Project Structure
 
-In some cases we can train further with the same setup to achieve slightly better results. 
+CUTLASS is arranged as a header-only library with several example test programs
+that demonstrate instantiating a GEMM task within a CUDA kernel. The Doxygen documentation
+provides a complete list of files, classes, and template concepts defined in the CUTLASS
+project. A brief summary is described below.
 
-GPU count |Precision |  BLEU score | Epochs to train | Training time
----|---|---|---|---
- 4 |fp16      |  28.67      | 74              | 1925 min
- 4 |fp32      |  28.40      | 47              | 5478 min
+The CUTLASS library is defined in the cutlass/ directory and consists of CUDA C++ template
+classes and other definitions for implementing efficient GPU GEMM kernels. A set of core
+classes and templates define basic primitives that are then applied to compute GEMM via
+templates in the cutlass/gemm directory.
 
-Results here are the best we achieved. We've observed a large variance in BLEU, while using random seed. Nearly all setups reach 28.4 BLEU, although the time it takes also varies between setups.
-We also observed a good rate of week scaling. We measured performance in tokens (words) per second.
+```
+cutlass/
+  gemm/
+  util/
+  <core API components>
+```
 
-GPU count | Mixed precision | FP32 | FP32/Mixed speedup | Mixed precision week scaling | FP32 week scaling
----|---|---|---|---|---
-1 | 37650 | 8630 | 4.36 | 1.0 | 1.0
-4 | 132700 | 30500 | 4.35 | 3.52 | 3.53
-8 | 260000 | 61000 | 4.26 | 6.91 | 7.07
+Several tools and test programs are also distributed with the CUTLASS library. They are
+contained in the following directories.
 
-## Inference performance results
-All results were obtained by `generate.py` inference script in the pytorch-19.01-py3 Docker container. Inference was run on a single GPU.
+```
+examples/
+  00_basic_gemm/
+  01_tensor_view/
+  02_cutlass_utilities/
+  03_batched_gemm/
+  04_tile_iterator/
+  05_wmma_gemm/
+tools/
+  test/
+    unit/
+      core/
+      gemm/
+    perf/
+  util/
+    reference/
+      device/
+      host/
+    <utilities>
+```
 
-GPU | Mixed precision | FP32 | FP16/Mixed speedup
----|---|---|---
-Tesla V100 | 5129.34 | 3396.09 | 1.51
+The `test/unit/` directory consist of unit tests implemented with Google Test that demonstrate
+basic usage of Core API components and complete tests of the CUTLASS GEMM computations.
 
-## Changelog
+The `tools/util` directory contains CUTLASS utilities including reference implementations of GEMM and
+several element-wise tensor operations.
 
-- initial commit, forked from [fairseq](https://github.com/pytorch/fairseq/commit/ac5fddfc691267285a84c81d39475411da5ed1c6)
-- adding mid-training [SacreBLEU](https://pypi.org/project/sacrebleu/1.2.10/) evaluation. Better handling of OOMs.
+# Performance Profiling
 
-## Known issues
+The `test/perf/` directory contains a command-line utility for launching each of the GEMM kernels.
+Its usage is shown below.
 
-- Course of a training heavily depends on a random seed. There is high variance in a time required to reach a certain BLEU score. Also the highest BLEU score value observed vary between runs with different seeds.
+Program usage:
+
+```
+  cutlass_perf_test [options]
+
+    --help
+    --append=<true|false*>                            If true, appends output to existing CSV file. If false, overwrites.
+    --alpha=<alpha>                                   Value for alpha to be used in GEMM experiments
+    --beta=<beta>                                     Value for beta to be used in GEMM experiments
+    --dist=<distribution>                             Describes the random distribution of each of the input matrix operands.
+    --execution_mode=<mode>                           Specifies execution mode: profile, verify, single
+    --output=<filename.csv>                           Writes summary of profiling to specified .csv file
+    --iterations=<timing iterations>                  maximum number of iterations to execute when profiling
+    --m=<height>[:max height[:step]]                  Height of GEMM problem (number of rows of C). May specify a range with optional step size.
+    --n=<width>[:max width[:step]]                    Width of GEMM problem (number of columns of C). May specify a range with optional step size.
+    --k=<depth>[:max depth[:step]]                    Size of inner dimension of A and B. May specify a range with optional step size.
+    --kernels=<{s|d|h|i|wmma_}gemm_{nn,nt,tn,tt}>     Select GEMM datatype and layout to use for tests
+    --peak=<bool>                                     If true, only reports peak performance per kernel after profiling specified problem space.
+    --save_workspace={*never,incorrect,always}        Specifies when to save the GEMM inputs and results to the filesystem.
+    --seed=<seed>                                     Random seed used by the random number generator in initializing input matrices.
+    --tags=<column:tag,...>                           Inserts leading columns in output table and uniform values for each column.
+
+
+  Example usage:
+
+  # Runs one problem size for all kernels
+  $ ./tools/test/perf/cutlass_perf_test --m=10240 --n=1024 --k=1024
+
+  # Varies GEMM K dimension for SGEMM and IGEMM with column-major multiplicands
+  $ ./tools/test/perf/cutlass_perf_test --m=10240 --n=4096 --k=1024:8192:128 --kernels=sgemm_nn,igemm_nn
+
+  # Executes GEMM kernel on Volta Tensor Cores
+  $ ./tools/test/perf/cutlass_perf_test --kernels=s884gemm_nt
+```
+
+# About
+
+CUTLASS is released by NVIDIA Corporation as Open Source software under the
+3-clause "New" BSD license.
+
+
+# Copyright
+
+Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+
+```
+  Redistribution and use in source and binary forms, with or without modification, are permitted
+  provided that the following conditions are met:
+      * Redistributions of source code must retain the above copyright notice, this list of
+        conditions and the following disclaimer.
+      * Redistributions in binary form must reproduce the above copyright notice, this list of
+        conditions and the following disclaimer in the documentation and/or other materials
+        provided with the distribution.
+      * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
+        to endorse or promote products derived from this software without specific prior written
+        permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+  FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+  STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
