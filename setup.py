@@ -74,7 +74,7 @@ fused_relu_dropout = CUDAExtension(
                         }
 )
 batch_utils = CppExtension(
-                        name='fairseq.data.batch_C',
+                        name='fairseq_data_batch_C',
                         sources=['fairseq/data/csrc/make_batches.cpp'],
                         extra_compile_args={
                                 'cxx': ['-O2',],
