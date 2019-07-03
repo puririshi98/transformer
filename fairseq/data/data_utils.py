@@ -171,7 +171,7 @@ class EpochBatchIterator(object):
             max_tokens = max_tokens if max_tokens is not None else sys.maxsize
             #Following line is workaround due to the fact we cannot pass None object as argument
             tgt_sizes = self.dataset.tgt_sizes if not self.dataset.tgt_sizes is None else self.dataset.src_sizes
-            batches = fairseq.data.batch_C.make_batches(self.dataset.src_sizes, tgt_sizes, indices, max_tokens, max_sentences, self.bsz_mult, max_positions_num)
+            batches = fairseq_data_batch_C.make_batches(self.dataset.src_sizes, tgt_sizes, indices, max_tokens, max_sentences, self.bsz_mult, max_positions_num)
             self.frozen_batches = tuple(batches) 
 #            self.frozen_batches = tuple(self._batch_generator())
             print("generated batches in ", time.time() - start, "s")
