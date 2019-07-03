@@ -28,7 +28,7 @@ import numpy as np
 import torch
 
 from . import FairseqDataset
-import fairseq.data.batch_C
+import fairseq_data_batch_C
 import sys
 
 
