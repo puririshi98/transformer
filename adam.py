@@ -170,7 +170,7 @@ class Adam(Optimizer):
             param_count=0
             for param in group['params']:
                 param_count+=1
-                if param_count>4:
+                if param_count>-1:
                     stochround.stochastic_tensor_round(param, param)
                     param_state=self.state[param]
                     if len(param_state) !=0:
