@@ -52,14 +52,17 @@ class Adam(Optimizer):
         loss = None
         if closure is not None:
             loss = closure()
-        param_count=0
+        
         for group in self.param_groups:
             
             for p in group['params']:
+
                 if p.grad is None:
                     continue
-                param_count+=1
+                
                 grad = p.grad.data
+                # if (grad==0.0).all():
+                #     print('param'+str(param_count)+' is zero')
                 if grad.is_sparse:
                     raise RuntimeError('Adam does not support sparse gradients, please consider SparseAdam instead')
                 amsgrad = group['amsgrad']
@@ -84,7 +87,8 @@ class Adam(Optimizer):
 
                 state['step'] += 1
 
-
+                # if state['step']==1:
+                #     print(p)
 
                 if group['weight_decay'] != 0:
                     grad.add_(group['weight_decay'], p.data)
@@ -146,47 +150,69 @@ class Adam(Optimizer):
                 #     print(state['step'])
                 #     print((1/denom)[(1/denom)>65536])
                 #     raise ValueError("1/denom exploded")
-#                 if (exp_avg_sq<0.0).any():
-#                     raise ValueError("exp_avg_sq has a negative value after rounding")
-#                 if torch.isnan(exp_avg_sq).any():
-#                     raise ValueError('exp_avg_sq became nan before rounding on step: '+str(state['step']))
-#                 if torch.isnan(exp_avg).any():
-#                     raise ValueError('exp_avg became nan before rounding on step: '+str(state['step']))
+                # if (exp_avg_sq<0.0).any():
+                #     raise ValueError("exp_avg_sq has a negative value after rounding")
+                # if torch.isnan(exp_avg_sq).any():
+                #     raise ValueError('exp_avg_sq became nan before rounding on step: '+str(state['step']))
+                # if torch.isnan(exp_avg).any():
+                #     raise ValueError('exp_avg became nan before rounding on step: '+str(state['step']))
                      
-#                 if exp_avg.type()!='torch.cuda.FloatTensor':
-#                     raise ValueError('exp_avg is not float')
-#                 if exp_avg_sq.type()!='torch.cuda.FloatTensor':
-#                     raise ValueError('exp_avg_sq is not float')
-#                 if (exp_avg>65536).any():
-#                     print(exp_avg[exp_avg>65536])
-#                     raise ValueError("vals in exp_avg are too big")
-#                 if (exp_avg_sq>65536).any():
-#                     print(exp_avg_sq[exp_avg_sq>65536])
-#                     raise ValueError("vals in exp_avg_sq are too big")
-                
+                # if exp_avg.type()!='torch.cuda.FloatTensor':
+                #     raise ValueError('exp_avg is not float')
+                # if exp_avg_sq.type()!='torch.cuda.FloatTensor':
+                #     raise ValueError('exp_avg_sq is not float')
+                # if (exp_avg>65536).any():
+                #     print(exp_avg[exp_avg>65536])
+                #     raise ValueError("vals in exp_avg are too big")
+                # if (exp_avg_sq>65536).any():
+                #     print(exp_avg_sq[exp_avg_sq>65536])
+                #     raise ValueError("vals in exp_avg_sq are too big")
+            param_count=0
             for param in group['params']:
-                stochround.stochastic_tensor_round(param, param)
-                param_state=self.state[param]
-                if len(param_state) !=0:
-                    exp_avg, exp_avg_sq = param_state['exp_avg'], param_state['exp_avg_sq']
-                    if group['amsgrad']:
-                        max_exp_avg_sq = param_state['max_exp_avg_sq']
-                        stochround.stochastic_tensor_round(max_exp_avg_sq,max_exp_avg_sq)
-                    
-                    exp_avg=exp_avg/10000
-                    exp_avg_sq=exp_avg_sq/10000
-                    stochround.stochastic_tensor_round(exp_avg,exp_avg)
-                    stochround.stochastic_tensor_round(exp_avg_sq,exp_avg_sq)
-                    exp_avg=exp_avg*10000
-                    exp_avg_sq=exp_avg_sq*10000
-#             for param in group['params']:
-#                 state=self.state[param]
-#                 exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
-#                 if (exp_avg_sq<0).any():
-#                     raise ValueError("exp_avg_sq has a negative value after rounding")
-#                 if torch.isnan(exp_avg_sq).any():
-#                     raise ValueError('exp_avg_sq became nan after rounding on step: '+str(state['step']))
-#                 if torch.isnan(exp_avg).any():
-#                     raise ValueError('exp_avg became nan after rounding on step: '+str(state['step']))
+                param_count+=1
+                if param_count>4:
+                    stochround.stochastic_tensor_round(param, param)
+                    param_state=self.state[param]
+                    if len(param_state) !=0:
+                        exp_avg, exp_avg_sq = param_state['exp_avg'], param_state['exp_avg_sq']
+
+                        if group['amsgrad']:
+                            max_exp_avg_sq = param_state['max_exp_avg_sq']
+                            stochround.stochastic_tensor_round(max_exp_avg_sq,max_exp_avg_sq)
+                        # if param_state['step']>100:
+                        #     print("before scale")
+                        #     print('param')
+                        #     print(param)
+                        #     print("grad")
+                        #     print(param.grad.data)
+                        #     print(param.shape)
+                        #     print("exp_avg")
+                        #     print(exp_avg)
+                        #     print(exp_avg.abs().max())
+                        # exp_avg=exp_avg/10000
+                        # exp_avg_sq=exp_avg_sq/10000
+                        
+                        # if (exp_avg_sq==0.0).any():
+                        #     raise ValueError('scale zeros exp_avg_sq before round')
+                        # if (exp_avg==0.0).all() and param_state['step']>100:
+                        #     print()
+                        #     raise ValueError('scale zeros exp_avg before round on iter'+str(param_state['step']))
+                        stochround.stochastic_tensor_round(exp_avg,exp_avg)
+                        stochround.stochastic_tensor_round(exp_avg_sq,exp_avg_sq)
+                        # if (exp_avg==0.0).any():
+                        #     raise ValueError('zeros exp_avg_sq after round')
+                        # if (exp_avg==0.0).all()  and param_state['step']>100:
+                        #     raise ValueError('zeros exp_avg after round'+str(param_state['step']))
+                        # exp_avg=exp_avg*10000
+                        # exp_avg_sq=exp_avg_sq*10000
+            # for param in group['params']:
+            #     state=self.state[param]
+            #     exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
+            #     if (exp_avg_sq<0).any():
+            #         raise ValueError("exp_avg_sq has a negative value after rounding")
+            #     if torch.isnan(exp_avg_sq).any():
+            #         raise ValueError('exp_avg_sq became nan after rounding on step: '+str(state['step']))
+            #     if torch.isnan(exp_avg).any():
+            #         raise ValueError('exp_avg became nan after rounding on step: '+str(state['step']))
              
         return loss
