@@ -189,8 +189,8 @@ class Adam(Optimizer):
                         #     print("exp_avg")
                         #     print(exp_avg)
                         #     print(exp_avg.abs().max())
-                        exp_avg=exp_avg/10000
-                        exp_avg_sq=exp_avg_sq/10000
+                        #exp_avg=exp_avg/10000
+                        #exp_avg_sq=exp_avg_sq/10000
                         
                         # if (exp_avg_sq==0.0).any():
                         #     raise ValueError('scale zeros exp_avg_sq before round')
@@ -203,8 +203,8 @@ class Adam(Optimizer):
                         #     raise ValueError('zeros exp_avg_sq after round')
                         # if (exp_avg==0.0).all()  and param_state['step']>100:
                         #     raise ValueError('zeros exp_avg after round'+str(param_state['step']))
-                        exp_avg=exp_avg*10000
-                        exp_avg_sq=exp_avg_sq*10000
+                        #exp_avg=exp_avg*10000
+                        #exp_avg_sq=exp_avg_sq*10000
             # for param in group['params']:
             #     state=self.state[param]
             #     exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
